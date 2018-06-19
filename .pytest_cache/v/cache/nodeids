@@ -1,0 +1,3 @@
+[
+  "tests/test_script.py::test_format_date_string"
+]
