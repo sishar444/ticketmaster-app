@@ -1,3 +1,8 @@
 [
-  "tests/test_script.py::test_format_date_string"
+  "tests/test_script.py::test_format_date_string",
+  "tests/test_script.py::test_build_url_no_params",
+  "tests/test_script.py::test_build_url_city",
+  "tests/test_script.py::test_build_url_state",
+  "tests/test_script.py::test_build_url_country",
+  "tests/test_script.py::test_build_url_city_state_country"
 ]
