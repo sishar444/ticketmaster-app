@@ -9,11 +9,14 @@ import csv
 env_path = Path('.') / '.env'
 load_dotenv(dotenv_path=env_path) # loads environment variables set in a ".env" file
 
+#
 # GLOBAL VARIABLES
+#
+
 api_key = os.environ.get("TICKETMASTER_API_KEY") or "OOPS. Please set an environment variable named 'TICKETMASTER_API_KEY'."
-base_url = f"https://app.ticketmaster.com/discovery/v2/events.json?apikey={api_key}"
-app_running = True # used to keep prompts running until this is set to False
+base_url = "https://app.ticketmaster.com/discovery/v2/events.json"
 is_last_page = False # used to check if we can load next page of results
+events = []
 
 def run():
     print(intro_header())
@@ -91,15 +94,22 @@ def handle_user_commands(command):
         # Save results to file
         save_results_to_file()
     elif command_upper == 'X':
+        # Exit application
         quit("Thanks for using out app. Enjoy!")
     else:
+        # Handle unrecognized commands
         print("Sorry, we don't recognize that command. Please enter a new command.")
         prompt_user_command()
 
+#
 # ACTIONS
+#
 
 def search_with_url(url):
     print("Searching with url :", url)
+    response = requests.get(url)
+    response_json = json.loads(response.text)
+    parse_response(response_json)
 
 def go_to_next_page():
     print("Going to next page")
@@ -114,7 +124,9 @@ def save_results_to_file():
     print("Saving to file")
     prompt_user_command()
 
+#
 # HELPER METHODS
+#
 
 # Formats date into 'Month Day, Year'
 def format_date_string(date_str):
@@ -128,18 +140,62 @@ def build_request_url(keywords, city=None, state=None, country=None):
     if city!=None and len(city)>0:
         city_param = f"&city={city}"
     if state!=None and len(state)>0:
-        state_param = f"&state={state}"
+        state_param = f"&stateCode={state}"
     if country!=None and len(country)>0:
-        country_param = f"&country={country}"
+        country_param = f"&countryCode={country}"
 
     request_url = base_url + keyword_param
     request_url += city_param
     request_url += state_param
     request_url += country_param
+    request_url += f"&apikey={api_key}"
     return request_url
 
 def parse_response(json):
-    print("Parsing response json :", json)
+    # print(json)
+    # Check if the response contains an error message returned from the api, if not continue parsing response
+    try:
+        # Print error message, and ask user to try another search
+        error_message = json["fault"]
+        print("Sorry, we encountered an error while searching. Please try again.")
+        prompt_user_search_keywords()
+        return
+    except KeyError as e:
+        pass
+
+    page = json["page"]
+    total_events = page["totalElements"]
+    print("Events count :", total_events)
+    if total_events==0:
+        # No results found, notify user to try another search
+        print("Sorry, we couldn't find any results for your search. Please try again.")
+        prompt_user_search_keywords()
+        return
+
+    results = json["_embedded"]
+    events = results["events"]
+    # print(events[0])
+    for event in events:
+        name = event["name"]
+        print(name)
+        dates = event["dates"]
+        start = dates["start"]
+        start_time = start["dateTime"]
+        print(start_time)
+        embedded = event["_embedded"]
+        venues = embedded["venues"][0]
+        venue_name = venues["name"]
+        venue_city = venues["city"]["name"]
+        venue_country = venues["country"]["name"]
+        print(f"{venue_name} - {venue_city}, {venue_country}")
+        try:
+            price_ranges = event["priceRanges"][0]
+            min_price = float(price_ranges["min"])
+            max_price = float(price_ranges["max"])
+            print(f"Tickets from ${'{:,.2f}'.format(min_price)} to ${'{:,.2f}'.format(max_price)}")
+        except KeyError as e:
+            pass
+
 
 if __name__ == "__main__": # "if this script is run from the command-line, then ..."
     run()
