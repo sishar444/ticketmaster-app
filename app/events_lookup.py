@@ -16,6 +16,7 @@ load_dotenv(dotenv_path=env_path) # loads environment variables set in a ".env" 
 
 api_key = os.environ.get("TICKETMASTER_API_KEY") or "OOPS. Please set an environment variable named 'TICKETMASTER_API_KEY'."
 base_url = "https://app.ticketmaster.com/discovery/v2/events.json"
+keywords = ""
 current_page = 1
 total_pages = 0
 events = []
@@ -24,12 +25,6 @@ def run():
     print(intro_header())
     # Start new search
     start_new_search()
-
-
-    # Parse response
-    # Print parsed response
-    # Call print(search_results_header())
-    # Prompt user to input a command
 
 #
 # DISPLAY HEADERS & FOOTERS
@@ -79,7 +74,15 @@ def start_new_search():
 def prompt_user_search_keywords():
     # Prompt user to input search keywords
     search_keywords = input("Search keyword(s): ")
-    prompt_user_filters(search_keywords)
+    # Handle case if user entered nothing
+    if not search_keywords:
+        print("Please enter keyword(s) to search.")
+        prompt_user_search_keywords()
+    else:
+        global keywords
+        keywords = search_keywords
+        prompt_user_filters(search_keywords)
+
 
 def prompt_user_filters(keywords):
     request_url, city, state, country = "", "", "", ""
@@ -116,7 +119,8 @@ def handle_user_commands(command):
         go_to_previous_page()
     elif command_upper == 'S':
         # Save results to file
-        save_results_to_file()
+        global keywords
+        save_results_to_file(f"data/{keywords}-events.csv")
     elif command_upper == 'X':
         # Exit application
         quit("Thanks for using out app. Enjoy!")
@@ -130,22 +134,23 @@ def handle_user_commands(command):
 #
 
 def search_with_url(url):
-    print("Searching with url :", url)
+    print("Searching...")
     response = requests.get(url)
     response_json = json.loads(response.text)
-    parse_response(response_json)
+    success = parse_response(response_json)
+    if success:
+        display_current_page()
+    else:
+        start_new_search()
 
 def go_to_next_page():
     global current_page, total_pages
-    print("Current page: ",current_page)
-    print("Total pages: ", total_pages)
     if current_page==total_pages:
         print(f"""
         There are no more results.
         -----------------------------------""")
         prompt_user_command()
     else:
-        print("Going to next page")
         current_page += 1
         display_current_page()
 
@@ -157,12 +162,29 @@ def go_to_previous_page():
         -----------------------------------""")
         prompt_user_command()
     else:
-        print("Going to previous page")
         current_page -= 1
         display_current_page()
 
-def save_results_to_file():
-    print("Saving to file")
+def save_results_to_file(filename = "data/search-events.csv"):
+    global events
+    print("Saving to file...")
+    csv_filepath = os.path.join(os.path.dirname(__file__), "..", filename)
+    with open(csv_filepath, "w") as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=["name", "venue", "city", "state", "min", "max", "date", "time"])
+        writer.writeheader()
+        for event in events:
+            row = {
+                "name": event["name"],
+                "venue": event["venue"],
+                "city": event["city"],
+                "state": event["state"],
+                "min": event["min"],
+                "max": event["max"],
+                "date": event["date"],
+                "time": event["time"]
+            }
+            writer.writerow(row)
+        print("Done!")
     prompt_user_command()
 
 #
@@ -198,29 +220,23 @@ def build_request_url(keywords, city=None, state=None, country=None):
     return request_url
 
 def parse_response(json):
-    # print(json)
+    global total_pages, events
+
     # Check if the response contains an error message returned from the api, if not continue parsing response
     try:
         # Print error message, and ask user to try another search
         error_message = json["fault"]
         print("Sorry, we encountered an error while searching. Please try again.")
-        start_new_search()
-        return
+        return False
     except KeyError as e:
         pass
 
     page = json["page"]
     total_events = page["totalElements"]
-    print("Events count :", total_events)
     if total_events==0:
         # No results found, notify user to try another search
         print("Sorry, we couldn't find any results for your search. Please try again.")
-        start_new_search()
-        return
-
-    global total_pages, events
-    total_pages = math.ceil(total_events/10)  # Update this number
-    print("Pages :", total_pages)
+        return False
 
     results = json["_embedded"]
     events_list = results["events"]
@@ -250,14 +266,23 @@ def parse_response(json):
             "time": start_time
         }
         events.append(result)
-    events = sorted(events, key=lambda x: datetime.datetime.strptime(x["date"], '%Y-%m-%d'))
-    display_current_page()
+
+    events = [dict(tupleized) for tupleized in set(tuple(item.items()) for item in events)] # Remove duplicates
+    events = sorted(events, key=lambda x: datetime.datetime.strptime(x["date"], '%Y-%m-%d')) # Sort by date
+    print(events)
+    total_pages = math.ceil(len(events)/10)  # Update this number
+    return True
 
 def display_current_page():
     print(search_results_header())
 
+    global current_page, events
     current_idx = (current_page-1)*10
     end_idx = current_page*10
+    if end_idx > len(events):
+        end_idx = len(events)
+    print(f"    Showing results {str(current_idx+1)} to {str(end_idx)}:")
+
     while current_idx<end_idx:
         event = events[current_idx]
         date = format_date_string(event["date"])
@@ -279,8 +304,6 @@ def display_current_page():
         {prices_str}
         -----------------------------------""")
         current_idx += 1
-        if current_idx==(len(events)):
-            break
 
     prompt_user_command()
 
