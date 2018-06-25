@@ -269,7 +269,6 @@ def parse_response(json):
 
     events = [dict(tupleized) for tupleized in set(tuple(item.items()) for item in events)] # Remove duplicates
     events = sorted(events, key=lambda x: datetime.datetime.strptime(x["date"], '%Y-%m-%d')) # Sort by date
-    print(events)
     total_pages = math.ceil(len(events)/10)  # Update this number
     return True
 
